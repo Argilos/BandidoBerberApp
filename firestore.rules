@@ -1,0 +1,60 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper functions
+    function signedIn() {
+      return request.auth != null;
+    }
+    
+    function isAdmin() {
+      return signedIn() && 
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Services and Barbers: Public read, admin write
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    match /barbers/{barberId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    
+    // Bookings
+    match /bookings/{bookingId} {
+      allow read: if signedIn();
+      allow create: if signedIn(); 
+      // Only admins can approve/reject/delete
+      allow update, delete: if isAdmin(); 
+    }
+    
+    // Users
+    match /users/{userId} {
+      // Users can read/write their own profile
+      allow read, create: if signedIn() && request.auth.uid == userId;
+      allow update: if signedIn() && request.auth.uid == userId && 
+                    (request.resource.data.role == resource.data.role || !('role' in request.resource.data));
+      
+      // Admins can read all users and update roles
+      allow list: if isAdmin();
+      allow update: if isAdmin();
+    }
+
+    // Reviews: Public read, authenticated write
+    match /reviews/{reviewId} {
+      allow read: if true;
+      allow create: if signedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Settings: Public read, admin write
+    match /settings/{settingId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+  }
+}
